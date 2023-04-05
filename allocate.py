@@ -1,3 +1,7 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy
+
 def calculate_risk_contributions(weights, cov_matrix):
     """
     Calculate risk contributions for each asset in the portfolio.
