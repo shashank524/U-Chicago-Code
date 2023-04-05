@@ -42,3 +42,9 @@ def allocate_portfolio(asset_prices):
     weights = risk_parity_allocation(returns)
     
     return weights
+
+
+if __name__ == "__main__":
+    asset_prices = pd.read_csv('./testing_data.csv')
+    weights = allocate_portfolio(asset_prices=asset_prices)
+    print(weights)
