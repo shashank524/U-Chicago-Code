@@ -3,7 +3,7 @@ import numpy as np
 from scipy.optimize import minimize
 
 # Load historical data for the 10 stocks
-data = pd.read_csv('stock_data.csv', index_col='date')
+data = pd.read_csv('Training_Data_Case_3', index_col='date')
 
 # Calculate returns and expected returns for each stock
 returns = data.pct_change().dropna()
