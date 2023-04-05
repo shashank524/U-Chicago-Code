@@ -1,3 +1,4 @@
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy
@@ -45,6 +46,7 @@ def allocate_portfolio(asset_prices):
 
 
 if __name__ == "__main__":
-    asset_prices = pd.read_csv('./testing_data.csv')
+    asset_prices = pd.read_csv('./Training_Data_Case_3.csv')
     weights = allocate_portfolio(asset_prices=asset_prices)
+    print(sum(weights))
     print(weights)
