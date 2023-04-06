@@ -44,7 +44,6 @@ def allocate_portfolio(asset_prices):
     
     return weights
 
-
 if __name__ == "__main__":
     asset_prices = pd.read_csv('./Training_Data_Case_3.csv')
     weights = allocate_portfolio(asset_prices=asset_prices)
