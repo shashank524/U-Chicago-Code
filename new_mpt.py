@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import scipy.optimize as sc
 
+historical_asset_prices = []
+
 def calculate_risk_free_rate():
     # Calculate the risk-free rate using some method or use a fixed value
     return 0.02
@@ -32,13 +34,18 @@ def maxSR(mean_returns, cov_matrix, risk_free_rate=0, constraintSet=(0, 1)):
     return result
 
 def allocate_portfolio(asset_prices):
+    global historical_asset_prices
+    historical_asset_prices.append(asset_prices)
+    df = pd.DataFrame(historical_asset_prices, columns=[str(i) for i in range(1, 11)])
     risk_free_rate = calculate_risk_free_rate()
-    mean_returns, cov_matrix = getData(asset_prices)
+    mean_returns, cov_matrix = getData(df)
     optimized = maxSR(mean_returns, cov_matrix, risk_free_rate)
     weights = optimized.x
     return weights
 
 def grading(testing):
+    global historical_asset_prices
+    historical_asset_prices = []
     weights = np.full(shape=(len(testing.index), 10), fill_value=0.0)
     for i in range(0, len(testing)):
         unnormed = np.array(allocate_portfolio(list(testing.iloc[i, :])))
@@ -52,11 +59,9 @@ def grading(testing):
     returns = (np.array(capital[1:]) - np.array(capital[:-1])) / np.array(capital[:-1])
     return np.mean(returns) / np.std(returns) * (252 ** 0.5), capital, weights
 
-# Load the data and call allocate_portfolio
-# 
 if __name__ == "__main__":
-    asset_prices = pd.read_csv('./Training_Data_Case_3.csv', index_col=0)
-    weights = allocate_portfolio(asset_prices)
+    data = pd.read_csv('Training_Data_Case_3.csv', header=0, index_col=0)
+    weights = allocate_portfolio(data.iloc[0].tolist())
     print(sum(weights))
     print(weights)
 
