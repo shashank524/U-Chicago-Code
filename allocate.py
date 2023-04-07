@@ -3,7 +3,7 @@ import pandas as pd
 import scipy.optimize as sc
 
 historical_asset_prices = []
-data = pd.read_csv('Training_Data_Case_3.csv', header=0, index_col=0)
+data = pd.read_csv('Training Data_Case 3.csv',header=0, index_col=0)
 
 def calculate_risk_free_rate():
     # Calculate the risk-free rate using some method or use a fixed value
