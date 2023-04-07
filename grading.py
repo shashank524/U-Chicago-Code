@@ -50,5 +50,4 @@ def grading(testing):
 historical_prices = pd.DataFrame(columns=[f'Asset_{i}' for i in range(10)])
 
 data = pd.read_csv('./Training_Data_Case_3.csv',header=0, index_col=0)
-
 print(grading(data))
