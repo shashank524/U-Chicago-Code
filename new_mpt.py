@@ -11,7 +11,13 @@ def calculate_risk_free_rate():
 def getData(asset_prices):
     returns = asset_prices.pct_change().dropna()
     mean_returns = returns.mean()
-    cov_matrix = returns.cov()
+    
+    if len(returns) == 1:
+        # If there's only one row of data, return a zero covariance matrix
+        cov_matrix = pd.DataFrame(np.zeros((len(asset_prices.columns), len(asset_prices.columns))), columns=asset_prices.columns, index=asset_prices.columns)
+    else:
+        cov_matrix = returns.cov()
+    
     return mean_returns, cov_matrix
 
 def portfolioPerformance(weights, mean_returns, cov_matrix):
@@ -37,15 +43,23 @@ def allocate_portfolio(asset_prices):
     global historical_asset_prices
     historical_asset_prices.append(asset_prices)
     df = pd.DataFrame(historical_asset_prices, columns=[str(i) for i in range(1, 11)])
+    
+    if len(df) == 1:
+        # If there's only one row of data, return equal weights
+        return np.repeat(1/len(asset_prices), len(asset_prices))
+
     risk_free_rate = calculate_risk_free_rate()
     mean_returns, cov_matrix = getData(df)
+    
+    # If the covariance matrix is zero, return equal weights
+    if cov_matrix.eq(0).all().all():
+        return np.repeat(1/len(asset_prices), len(asset_prices))
+
     optimized = maxSR(mean_returns, cov_matrix, risk_free_rate)
     weights = optimized.x
     return weights
 
 def grading(testing):
-    global historical_asset_prices
-    historical_asset_prices = []
     weights = np.full(shape=(len(testing.index), 10), fill_value=0.0)
     for i in range(0, len(testing)):
         unnormed = np.array(allocate_portfolio(list(testing.iloc[i, :])))
@@ -61,7 +75,9 @@ def grading(testing):
 
 if __name__ == "__main__":
     data = pd.read_csv('Training_Data_Case_3.csv', header=0, index_col=0)
+    '''
     weights = allocate_portfolio(data.iloc[0].tolist())
     print(sum(weights))
     print(weights)
-
+    '''
+    print(grading(data)[0])
