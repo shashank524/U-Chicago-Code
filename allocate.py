@@ -73,12 +73,3 @@ def grading(testing):
         capital.append(float(np.matmul(np.reshape(shares, (1, 10)), np.array(testing.iloc[i+1, :]))))
     returns = (np.array(capital[1:]) - np.array(capital[:-1])) / np.array(capital[:-1])
     return np.mean(returns) / np.std(returns) * (252 ** 0.5), capital, weights
-
-if __name__ == "__main__":
-    data = pd.read_csv('Training_Data_Case_3.csv', header=0, index_col=0)
-    '''
-    weights = allocate_portfolio(data.iloc[0].tolist())
-    print(sum(weights))
-    print(weights)
-    '''
-    print(grading(data)[0])
