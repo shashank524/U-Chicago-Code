@@ -76,7 +76,7 @@ class BlackScholesBot(UTCBot):
                 # Calculate the option price using the Black-Scholes model
                 bs_params = self.params.copy()
                 bs_params["K"] = strike_price
-                option_price = self.black_scholes(underlying_price, bs_params)
+                option_price = self.black_scholes_binomial(underlying_price, bs_params)
 
                 if option_type == "C":
                     # option_price = underlying_price[f"call{strike_price}"]
@@ -114,6 +114,38 @@ class BlackScholesBot(UTCBot):
 
         call_price = S * norm.cdf(d1) - K * exp(-r * T) * norm.cdf(d2)
         return call_price
+    
+    import numpy as np
+
+def black_scholes_binomial(underlying_price, params, n_steps=252):
+    S0 = underlying_price["underlying"]
+    K = params["K"]
+    T = params["T"]
+    r = params["r"]
+    sigma = params["sigma"]
+
+    dt = T / n_steps
+    u = np.exp(sigma * np.sqrt(dt))
+    d = 1 / u
+    p = (np.exp(r * dt) - d) / (u - d)
+
+    S = np.zeros((n_steps + 1, n_steps + 1))
+    S[0, 0] = S0
+
+    for i in range(1, n_steps + 1):
+        S[i, 0] = S[i-1, 0] * u
+        for j in range(1, i + 1):
+            S[i, j] = S[i-1, j-1] * d
+
+    call_payoffs = np.maximum(S[-1] - K, 0)
+
+    for i in range(n_steps - 1, -1, -1):
+        call_payoffs = np.exp(-r * dt) * (p * call_payoffs[:-1] + (1 - p) * call_payoffs[1:])
+
+    call_price = call_payoffs[0]
+
+    return call_price
+
 
 
 if __name__ == "__main__":
