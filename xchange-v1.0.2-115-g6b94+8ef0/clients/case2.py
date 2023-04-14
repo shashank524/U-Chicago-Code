@@ -15,29 +15,21 @@ from scipy.stats import norm
 import os
 import re
 from math import log
-import numpy as np
-import aiofiles
-
+from functools import lru_cache
 
 PARAM_FILE = "params.json"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_FILE = os.path.join(SCRIPT_DIR, "..", "data", "case2", "training_pricepaths.csv")
 
-# Add a cache to store the calculated option prices
-option_price_cache = {}
 
 def round_to_tick_size(price, tick_size=0.1):
     return round(price / tick_size) * tick_size
-
 
 class BlackScholesBot(UTCBot):
     def __init__(self, username, key, host, port):
         super().__init__(username, key, host, port)
         self.params = None
         self.option_data = pd.read_csv(CSV_FILE, index_col=0)
-        self.last_underlying_price = 0
-        self.price_update_threshold = 0.1
-        self.params_ready = asyncio.Event()  # Add this line
 
     async def handle_round_started(self):
         await asyncio.sleep(0.1)
@@ -54,52 +46,47 @@ class BlackScholesBot(UTCBot):
             msg = update.generic_msg.message
             print(msg)
 
-
     async def handle_read_params(self):
         while True:
             try:
-                async with aiofiles.open(PARAM_FILE, "r") as f:
-                    self.params = json.loads(await f.read())
-                    self.params_ready.set()  # Add this line
+                self.params = json.load(open(PARAM_FILE, "r"))
             except:
                 print("Unable to read file " + PARAM_FILE)
 
             await asyncio.sleep(1)
 
-
-
-
-
     async def handle_market_snapshot(self, snapshot: pb.MarketSnapshotMessage, underlying_price: float):
-        await self.params_ready.wait()  # Add this line
-
-        # Update the option prices in the cache only when the underlying price changes significantly
-        if abs(self.last_underlying_price - underlying_price) >= self.price_update_threshold:
-            self.last_underlying_price = underlying_price
-
-            # Update the option prices in the cache
-            for asset_code, book in snapshot.books.items():
-                match = re.match(r"SPY(\d+(?:\.\d+)?)([CP])", asset_code)
-
-                if match:
-                    strike_price, option_type = match.groups()
-                    strike_price = float(strike_price)
-
-                    underlying_rows = self.option_data.iloc[(self.option_data['underlying'] - underlying_price).abs().argsort()[:1]]
-
-                    underlying_price = underlying_rows.iloc[0]['underlying']  # Update this line
-
-                    bs_params = self.params.copy()
-                    bs_params["K"] = strike_price
-                    option_price = black_scholes_binomial_opt(underlying_price, bs_params)
-
-                    option_price_cache[asset_code] = option_price
-
-        # Use the cached option prices for placing orders
+        tasks = []
         for asset_code, book in snapshot.books.items():
-            option_price = option_price_cache.get(asset_code, None)
+            tasks.append(self.process_book(asset_code, book, underlying_price))
+        await asyncio.gather(*tasks)
 
-            if option_price is not None and book.bids and book.asks:
+    async def process_book(self, asset_code, book, underlying_price):
+        # Extract the strike price and option type from the asset_code
+        match = re.match(r"SPY(\d+(?:\.\d+)?)([CP])", asset_code)
+
+        if match:
+            strike_price, option_type = match.groups()
+            strike_price = float(strike_price)
+
+            # Get the closest underlying price row in the option data
+            underlying_rows = self.option_data.iloc[(self.option_data['underlying'] - underlying_price).abs().argsort()[:1]]
+
+            underlying_price = underlying_rows.iloc[0]
+
+            # Calculate the option price using the Black-Scholes model
+
+            bs_params = self.params.copy()
+            bs_params["K"] = strike_price
+            option_price = self.black_scholes(underlying_price.to_dict(), bs_params)
+
+
+            if option_type == "C":
+                option_price = underlying_price[f"call{int(strike_price)}"]
+            elif option_type == "P":
+                option_price = underlying_price[f"put{int(strike_price)}"]
+
+            if book.bids and book.asks:
                 bid_price = float(book.bids[0].px)
                 ask_price = float(book.asks[0].px)
 
@@ -114,26 +101,21 @@ class BlackScholesBot(UTCBot):
                     await self.place_order(asset_code, pb.OrderSpecType.LIMIT, pb.OrderSpecSide.ASK, self.params["qty"], rounded_option_price)
                     print("placed order")
 
-def black_scholes_binomial_opt(underlying_price, params, n_steps=252):
-    S0 = underlying_price
-    K = params["K"]
-    T = params["T"]
-    r = params["r"]
-    sigma = params["sigma"]
+    @lru_cache(maxsize=None)
+    def black_scholes(self, underlying_price: dict, params: dict):
+        S = underlying_price["underlying"]
+        K = params["K"]
+        T = params["T"]
+        r = params["r"]
+        sigma = params["sigma"]
 
-    dt = T / n_steps
-    u = np.exp(sigma * np.sqrt(dt))
-    d = 1 / u
-    p = (np.exp(r * dt) - d) / (u - d)
+        d1 = (log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * sqrt(T))
+        d2 = d1 - sigma * sqrt(T)
 
-    call_payoffs = np.maximum(S0 * u**np.arange(n_steps + 1) * d**(n_steps - np.arange(n_steps + 1)) - K, 0)
+        call_price = S * norm.cdf(d1) - K * exp(-r * T) * norm.cdf(d2)
+        return call_price
 
-    for i in range(n_steps - 1, -1, -1):
-        call_payoffs[:-1] = np.exp(-r * dt) * (p * call_payoffs[:-1] + (1 - p) * call_payoffs[1:])
 
-    call_price = call_payoffs[0]
-
-    return call_price
 
 if __name__ == "__main__":
     start_bot(BlackScholesBot)
