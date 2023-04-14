@@ -76,7 +76,7 @@ class BlackScholesBot(UTCBot):
                 # Calculate the option price using the Black-Scholes model
                 bs_params = self.params.copy()
                 bs_params["K"] = strike_price
-                option_price = self.black_scholes(underlying_price, bs_params)
+                option_price = self.black_scholes_mc(underlying_price, bs_params)
 
                 if option_type == "C":
                     # option_price = underlying_price[f"call{strike_price}"]
