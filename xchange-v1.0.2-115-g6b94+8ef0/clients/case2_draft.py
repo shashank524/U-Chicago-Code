@@ -15,6 +15,7 @@ from scipy.stats import norm
 import os
 import re
 from math import log
+import numpy as np
 
 
 PARAM_FILE = "params.json"
@@ -76,7 +77,7 @@ class BlackScholesBot(UTCBot):
                 # Calculate the option price using the Black-Scholes model
                 bs_params = self.params.copy()
                 bs_params["K"] = strike_price
-                option_price = self.black_scholes(underlying_price, bs_params)
+                option_price = black_scholes_binomial(underlying_price, bs_params)
 
                 if option_type == "C":
                     # option_price = underlying_price[f"call{strike_price}"]
@@ -114,6 +115,35 @@ class BlackScholesBot(UTCBot):
 
         call_price = S * norm.cdf(d1) - K * exp(-r * T) * norm.cdf(d2)
         return call_price
+    
+
+def black_scholes_binomial(underlying_price, params, n_steps=252):
+    S0 = underlying_price["underlying"]
+    K = params["K"]
+    T = params["T"]
+    r = params["r"]
+    sigma = params["sigma"]
+
+    dt = T / n_steps
+    u = np.exp(sigma * np.sqrt(dt))
+    d = 1 / u
+    p = (np.exp(r * dt) - d) / (u - d)
+
+    # Vectorized binomial tree calculation
+    tree = np.zeros((n_steps + 1, n_steps + 1))
+    j = np.arange(n_steps + 1)
+    i = np.arange(n_steps + 1)[:, np.newaxis]
+    tree[i, j] = S0 * (u ** (i - 2 * j)) * (i >= j)
+
+    call_payoffs = np.maximum(tree[-1] - K, 0)
+    q = np.exp(-r * dt)
+
+    for i in range(n_steps - 1, -1, -1):
+        call_payoffs[:i+1] = q * (p * call_payoffs[:i+1] + (1 - p) * call_payoffs[1:i+2])
+
+    call_price = call_payoffs[0]
+
+    return call_price
 
 
 if __name__ == "__main__":
