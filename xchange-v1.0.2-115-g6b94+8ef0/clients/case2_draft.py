@@ -114,6 +114,33 @@ class BlackScholesBot(UTCBot):
 
         call_price = S * norm.cdf(d1) - K * exp(-r * T) * norm.cdf(d2)
         return call_price
+    
+    import numpy as np
+
+def black_scholes_mc(underlying_price, params, n_simulations=100000):
+    S0 = underlying_price["underlying"]
+    K = params["K"]
+    T = params["T"]
+    r = params["r"]
+    sigma = params["sigma"]
+
+    dt = T / 252
+    n_steps = int(T / dt)
+
+    np.random.seed(123)
+    z = np.random.normal(size=(n_simulations, n_steps))
+
+    S = np.zeros((n_simulations, n_steps + 1))
+    S[:, 0] = S0
+
+    for i in range(1, n_steps + 1):
+        S[:, i] = S[:, i-1] * np.exp((r - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * z[:, i-1])
+
+    call_payoffs = np.maximum(S[:, -1] - K, 0)
+    call_price = np.exp(-r * T) * np.mean(call_payoffs)
+
+    return call_price
+
 
 
 if __name__ == "__main__":
