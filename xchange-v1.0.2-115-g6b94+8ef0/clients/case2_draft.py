@@ -121,37 +121,27 @@ def black_scholes(underlying_price, params):
 
 import math
 import numpy as np
-'''
-def black_scholes_binomial(underlying_price, params, n_steps=252):
-    S0 = underlying_price["underlying"]
-    K = params["K"]
-    T = params["T"]
-    r = params["r"]
-    sigma = params["sigma"]
+def black_scholes_binomial_approx(self, underlying_price, params, n_steps=252):
+        S0 = underlying_price["underlying"]
+        K = params["K"]
+        T = params["T"]
+        r = params["r"]
+        sigma = params["sigma"]
 
-    dt = T / n_steps
-    u = np.exp(sigma * np.sqrt(dt))
-    d = 1 / u
-    p = (np.exp(r * dt) - d) / (u - d)
+        dt = T / n_steps
+        u = exp(sigma * sqrt(dt))
+        d = 1 / u
+        p = (exp(r * dt) - d) / (u - d)
 
-    S = np.zeros((n_steps + 1, n_steps + 1))
-    S[0, 0] = S0
+        option_price = 0
+        for j in range(n_steps + 1):
+            stock_price = S0 * u ** j * d ** (n_steps - j)
+            payoff = max(stock_price - K, 0)
+            option_price += comb(n_steps, j) * p ** j * (1 - p) ** (n_steps - j) * payoff
 
-    for i in range(1, n_steps + 1):
-        S[i, 0] = S[i-1, 0] * u
-        for j in range(1, i + 1):
-            S[i, j] = S[i-1, j-1] * d
+        option_price /= (1 + r) ** n_steps
 
-    call_payoffs = np.maximum(S[-1] - K, 0)
-
-    for i in range(n_steps - 1, -1, -1):
-        call_payoffs = (np.exp(-r * dt) * (p * np.append(call_payoffs[1:], 0) + (1 - p) * call_payoffs[:-1]))
-        d1 = (np.log(S[-1, :] / K) + (r + 0.5 * sigma ** 2) * (T - i * dt)) / (sigma * np.sqrt(T - i * dt))
-        d2 = d1 - sigma * np.sqrt(T - i * dt)
-        N_d1 = 0.5 * (1 + math.erf(d1 / np.sqrt(2)))
-        N_d2 = 0.5 * (1 + math.erf(d2 / np.sqrt(2)))
-        call_payoffs = np.maximum(call_payoffs'''
-
+        return option_price
 
 
 
