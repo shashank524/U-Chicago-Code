@@ -16,11 +16,14 @@ import os
 import re
 from math import log
 import numpy as np
+# from numba import jit
 
 
 PARAM_FILE = "params.json"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_FILE = os.path.join(SCRIPT_DIR, "..", "data", "case2", "training_pricepaths.csv")
+
+asset_code_pattern = re.compile(r"SPY(\d+(?:\.\d+)?)([CP])")
 
 
 def round_to_tick_size(price, tick_size=0.1):
@@ -44,10 +47,16 @@ class BlackScholesBot(UTCBot):
             # Obtain the underlying price from self.option_data
             underlying_price = self.option_data.loc[0, 'underlying']
 
+
             await self.handle_market_snapshot(update.market_snapshot_msg, underlying_price)
         elif kind == "generic_msg":
             msg = update.generic_msg.message
             print(msg)
+            '''
+            print("Current positions:")
+            for asset, position in self.positions.items():
+                print(f"{asset}: {position}")
+            '''
 
 
     async def handle_read_params(self):
@@ -63,7 +72,8 @@ class BlackScholesBot(UTCBot):
     async def handle_market_snapshot(self, snapshot: pb.MarketSnapshotMessage, underlying_price: float):
         for asset_code, book in snapshot.books.items():
             # Extract the strike price and option type from the asset_code
-            match = re.match(r"SPY(\d+(?:\.\d+)?)([CP])", asset_code)
+            # match = re.match(r"SPY(\d+(?:\.\d+)?)([CP])", asset_code)
+            match = asset_code_pattern.match(asset_code)
 
             if match:
                 strike_price, option_type = match.groups()
@@ -77,8 +87,7 @@ class BlackScholesBot(UTCBot):
                 # Calculate the option price using the Black-Scholes model
                 bs_params = self.params.copy()
                 bs_params["K"] = strike_price
-                #option_price = black_scholes_binomial(underlying_price, bs_params)
-                option_price = black_scholes_binomial_new(underlying_price, bs_params)
+                option_price = black_scholes_binomial(underlying_price, bs_params)
 
                 if option_type == "C":
                     # option_price = underlying_price[f"call{strike_price}"]
@@ -117,7 +126,7 @@ class BlackScholesBot(UTCBot):
         call_price = S * norm.cdf(d1) - K * exp(-r * T) * norm.cdf(d2)
         return call_price
     
-
+# @jit(nopython=True)
 def black_scholes_binomial(underlying_price, params, n_steps=252):
     S0 = underlying_price["underlying"]
     K = params["K"]
@@ -131,7 +140,8 @@ def black_scholes_binomial(underlying_price, params, n_steps=252):
     p = (np.exp(r * dt) - d) / (u - d)
 
     # Vectorized binomial tree calculation
-    tree = np.zeros((n_steps + 1, n_steps + 1))
+    # tree = np.zeros((n_steps + 1, n_steps + 1))
+    tree = np.empty((n_steps + 1, n_steps + 1))
     j = np.arange(n_steps + 1)
     i = np.arange(n_steps + 1)[:, np.newaxis]
     tree[i, j] = S0 * (u ** (i - 2 * j)) * (i >= j)
@@ -147,33 +157,6 @@ def black_scholes_binomial(underlying_price, params, n_steps=252):
     return call_price
 
 
-def black_scholes_binomial_new(underlying_price, params, n_steps=252):
-    S0 = underlying_price["underlying"]
-    K = params["K"]
-    T = params["T"]
-    r = params["r"]
-    sigma = params["sigma"]
-
-    dt = T / n_steps
-    u = np.exp(sigma * np.sqrt(dt))
-    d = 1 / u
-    p = (np.exp(r * dt) - d) / (u - d)
-
-    # Vectorized binomial tree calculation
-    tree = np.zeros((n_steps + 1, n_steps + 1))
-    j = np.arange(n_steps + 1)
-    i = np.arange(n_steps + 1)[:, np.newaxis]
-    tree[i, j] = S0 * (u ** (i - 2 * j)) * (i >= j)
-
-    call_payoffs = np.maximum(tree[-1] - K, 0)
-    q = np.exp(-r * dt)
-
-    for i in range(n_steps - 1, -1, -1):
-        call_payoffs[:i] = (p * call_payoffs[1:i+1] + (1 - p) * call_payoffs[:i])
-        call_payoffs[:i] *= q
-
-    return call_payoffs[0]
-
-
 if __name__ == "__main__":
     start_bot(BlackScholesBot)
+
