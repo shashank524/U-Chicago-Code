@@ -179,33 +179,25 @@ class Case1Bot(UTCBot):
             bid_px = self._fair_price[asset] - self._spread[asset]
             ask_px = self._fair_price[asset] + self._spread[asset]
             
-            # If the underlying price moved first, adjust the ask first to avoid self-trades
-            if (bid_px + ask_px) > (ua_price + ub_price):
-                order = ["ask", "bid"]
-            else:
-                order = ["bid", "ask"]
-
-            for d in order:
-                if d == "bid":
-                    order_id = ub_oid
-                    order_side = pb.OrderSpecSide.BID
-                    order_px = bid_px
-                else:
-                    order_id = ua_oid
-                    order_side = pb.OrderSpecSide.ASK
-                    order_px = ask_px
-
-                r = await self.modify_order(
-                        order_id = order_id,
-                        asset_code = asset,
-                        order_type = pb.OrderSpecType.LIMIT,
-                        order_side = order_side,
-                        qty = self._quantity[asset],
-                        px = round_nearest(order_px, TICK_SIZE), 
-                    )
-
-                self.__orders[f"underlying_{d}_{asset}"] = (r.order_id, order_px)
+            # If the underlying price moved first, adjust the orders to follow
+            if self._best_bid[asset] > ub_price:
+                await self.cancel_order(ub_oid)
+            if self._best_ask[asset] < ua_price:
+                await self.cancel_order(ua_oid)
                 
+            # Place new orders if we don't have any in the order book
+            if ub_oid == "":
+                ub_resp = await self.place_order(asset, True, bid_px, self._quantity[asset])
+                if ub_resp.ok:
+                    self.__orders["underlying_bid_{}".format(asset)] = (ub_resp.order_id, ub_resp.order.price)
+                
+            if ua_oid == "":
+                ua_resp = await self.place_order(asset, False, ask_px, self._quantity[asset])
+                if ua_resp.ok:
+                    self.__orders["underlying_ask_{}".format(asset)] = (ua_resp.order_id, ua_resp.order.price)
+            
+            await asyncio.sleep(0.1)
+           
         
 
 def round_nearest(x, a):
