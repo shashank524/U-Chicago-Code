@@ -102,20 +102,24 @@ class BlackScholesBot(UTCBot):
 
 
 
-    def black_scholes(self, underlying_price, params):
-        S = underlying_price["underlying"]
-        K = params["K"]
-        T = params["T"]
-        r = params["r"]
-        sigma = params["sigma"]
+import math
 
-        d1 = (log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * sqrt(T))
-        d2 = d1 - sigma * sqrt(T)
+def black_scholes(underlying_price, params):
+    S = underlying_price["underlying"]
+    K = params["K"]
+    T = params["T"]
+    r = params["r"]
+    sigma = params["sigma"]
 
-        call_price = S * norm.cdf(d1) - K * exp(-r * T) * norm.cdf(d2)
-        return call_price
+    d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+
+    call_price = S * 0.5 * (1 + math.erf(d1 / math.sqrt(2))) - K * math.exp(-r * T) * 0.5 * (1 + math.erf(d2 / math.sqrt(2)))
+    return call_price
+
     
-    import numpy as np
+
+import numpy as np
 
 def black_scholes_binomial(underlying_price, params, n_steps=252):
     S0 = underlying_price["underlying"]
@@ -140,11 +144,13 @@ def black_scholes_binomial(underlying_price, params, n_steps=252):
     call_payoffs = np.maximum(S[-1] - K, 0)
 
     for i in range(n_steps - 1, -1, -1):
-        call_payoffs = np.exp(-r * dt) * (p * call_payoffs[:-1] + (1 - p) * call_payoffs[1:])
+        call_payoffs = (np.exp(-r * dt) * (p * np.append(call_payoffs[1:], 0) + (1 - p) * call_payoffs[:-1]))
+        d1 = (np.log(S[-1, :] / K) + (r + 0.5 * sigma ** 2) * (T - i * dt)) / (sigma * np.sqrt(T - i * dt))
+        d2 = d1 - sigma * np.sqrt(T - i * dt)
+        N_d1 = 0.5 * (1 + math.erf(d1 / np.sqrt(2)))
+        N_d2 = 0.5 * (1 + math.erf(d2 / np.sqrt(2)))
+        call_payoffs = np.maximum(call_payoffs
 
-    call_price = call_payoffs[0]
-
-    return call_price
 
 
 
