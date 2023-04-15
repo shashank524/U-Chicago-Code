@@ -1,13 +1,5 @@
 #!/usr/bin/env python
 
-'''
-Linear regression model to map weather data to futures prices
-'''
-
-import pandas as pd
-import numpy as np
-from sklearn.linear_model import LinearRegression
-
 from collections import defaultdict
 from typing import DefaultDict, Dict, Tuple
 from utc_bot import UTCBot, start_bot
@@ -17,6 +9,61 @@ import betterproto
 import asyncio
 import re
 
+import csv
+import os
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+weather_2020_file = 'weather_2020.csv'
+weather_2021_file = 'weather_2022.csv'
+futures_2020_file = 'futures_2020_clean.csv'
+futures_2021_file = 'futures_2022.csv'
+
+# weather_2020_file = os.path.join(SCRIPT_DIR, "..", "data", "case1", weather_2020_file)
+weather_2021_file = os.path.join(SCRIPT_DIR, "..", "data", "case1", weather_2021_file)
+# futures_2020_file = os.path.join(SCRIPT_DIR, "..", "data", "case2", futures_2020_file)
+futures_2021_file = os.path.join(SCRIPT_DIR, "..", "data", "case1", futures_2021_file)
+
+def read_weather_data(file_path: str) -> Dict[int, float]:
+    weather_data = {}
+
+    with open(file_path, newline='') as csvfile:
+        reader = csv.reader(csvfile)
+        next(reader, None)  # Skip the header
+        for row in reader:
+            day, weather = int(row[0]), float(row[1])
+            weather_data[day] = weather
+
+    return weather_data
+
+# weather_2020_data = read_weather_data(weather_2020_file)
+weather_2021_data = read_weather_data(weather_2021_file)
+
+
+def read_futures_data(file_path: str) -> Dict[int, Dict[str, float]]:
+    futures_data = {}
+
+    with open(file_path, newline='') as csvfile:
+        reader = csv.reader(csvfile)
+        header = next(reader, None)  # Get the header
+        for row in reader:
+            day = int(row[0])
+            futures_data[day] = {header[i]: float(value) for i, value in enumerate(row[1:], start=1)}
+
+    return futures_data
+
+# futures_2020_data = read_futures_data(futures_2020_file)
+futures_2021_data = read_futures_data(futures_2021_file)
+
+def weather_impact(weather_data: Dict[int, float], day: int) -> float:
+    # You can implement your own logic to calculate the weather impact on the fair price
+    # For example, you can calculate the average weather value over a certain period
+    weather_avg = sum(weather_data[day - i] for i in range(5)) / 5
+    impact = (weather_data[day] - weather_avg) * 0.01  # Assuming 1% impact for each unit of weather difference
+    return impact
+
+
+
 DAYS_IN_MONTH = 21
 DAYS_IN_YEAR = 252
 INTEREST_RATE = 0.02
@@ -24,11 +71,17 @@ NUM_FUTURES = 14
 TICK_SIZE = 0.00001
 FUTURE_CODES = [chr(ord('A') + i) for i in range(NUM_FUTURES)] # Suffix of monthly future code
 CONTRACTS = ['SBL'] +  ['LBS' + c for c in FUTURE_CODES] + ['LLL']
+POSITION_LIMIT = 1000
+
 
 class Case1Bot(UTCBot):
     """
     An example bot
     """
+    async def is_within_position_limit(self, asset: str, new_position: int) -> bool:
+        position = self.positions.get(asset, 0)
+        return abs(position + new_position) <= POSITION_LIMIT
+
     etf_suffix = ''
     async def create_etf(self, qty: int):
         '''
@@ -91,7 +144,8 @@ class Case1Bot(UTCBot):
                 self._best_bid[asset] = float(book.bids[0].px)
                 self._best_ask[asset] = float(book.bids[0].px)
             
-    
+
+
     async def handle_round_started(self):
         ### Current day
         self._day = 0
@@ -124,21 +178,6 @@ class Case1Bot(UTCBot):
         ### List of weather reports
         self._weather_log = []
         
-        # Load CSV data
-        weather_2020 = pd.read_csv("weather_2020.csv")
-        weather_2021 = pd.read_csv("weather_2021.csv")
-        futures_2020 = pd.read_csv("futures_2020_clean.csv")
-        futures_2021 = pd.read_csv("futures_2021_clean.csv")
-        
-        # Combine weather and futures data
-        data_2020 = pd.concat([weather_2020, futures_2020], axis=1)
-        data_2021 = pd.concat([weather_2021, futures_2021], axis=1)
-        combined_data = pd.concat([data_2020, data_2021], axis=0)
-        
-        # Train linear regression model
-        self.lr_model = LinearRegression()
-        self.lr_model.fit(combined_data["weather"].values.reshape(-1, 1), combined_data["SBL"].values)
-        
         await asyncio.sleep(.1)
         ###
         ### TODO START ASYNC FUNCTIONS HERE
@@ -148,37 +187,64 @@ class Case1Bot(UTCBot):
         # Starts market making for each asset
         # for asset in CONTRACTS:
             # asyncio.create_task(self.make_market_asset(asset))
-    
+
     # This is an example of creating and redeeming etfs
     # You can remove this in your actual bots.
     async def example_redeem_etf(self):
         while True:
-            redeem_resp = await self.redeem_etf(1)
-            create_resp = await self.create_etf(5)
+            create_resp = await self.create_etf(1)
             await asyncio.sleep(1)
+            redeem_resp = await self.redeem_etf(1)
+            await asyncio.sleep(1)
+
 
 
     ### Helpful ideas
     async def calculate_risk_exposure(self):
         pass
+    
+    async def calculate_fair_price(self, asset: str, day: int) -> float:
+        # Example: Calculate fair price based on the mid-price of the best bid and ask prices
+        mid_price = (self._best_bid[asset] + self._best_ask[asset]) / 2
 
-    async def calculate_fair_price(self, asset):
-        if self._day < len(self._weather_log):
-            predicted_weather = self.lr_model.predict(np.array(self._weather_log[self._day]).reshape(-1, 1))
-            fair_price = max(0, predicted_weather[0])  # Ensure fair price is non-negative
-            self._fair_price[asset] = fair_price
-        else:
-            self._fair_price[asset] = 0  # Set fair price to zero if no weather data is available
+        # Calculate the weather impact
+        weather_impact_value = weather_impact(weather_2021_data, day)  # or use weather_2021_data for 2021
 
+        # Adjust the fair price based on the weather impact
+        adjusted_fair_price = mid_price + weather_impact_value
+
+        # Incorporate futures data into the fair price calculation
+        if asset.startswith('LBS'):
+            future_data = futures_2021_data.get(day)
+            if future_data:
+                future_price = future_data.get(asset)
+                if future_price:
+                    adjusted_fair_price = (adjusted_fair_price + future_price) / 2
+
+        return adjusted_fair_price
+
+
+
+    async def calculate_spread(self, asset: str) -> float:
+        # Example: Calculate spread as a percentage of the fair price
+        spread_percentage = 0.01  # This could be adjusted based on your strategy
+        spread = await self.calculate_fair_price(asset) * spread_percentage
+        return spread
+        
+                
     async def make_market_asset(self, asset: str):
         while self._day <= DAYS_IN_YEAR:
-            ## Old prices
+            # Calculate fair price and spread dynamically
+            fair_price = await self.calculate_fair_price(asset, self._day)
+            spread = await self.calculate_spread(asset)
+
+            # Old prices
             ub_oid, ub_price = self.__orders["underlying_bid_{}".format(asset)]
             ua_oid, ua_price = self.__orders["underlying_ask_{}".format(asset)]
-            
-            bid_px = self._fair_price[asset] - self._spread[asset]
-            ask_px = self._fair_price[asset] + self._spread[asset]
-            
+
+            bid_px = fair_price - spread
+            ask_px = fair_price + spread
+
             # If the underlying price moved first, adjust the ask first to avoid self-trades
             if (bid_px + ask_px) > (ua_price + ub_price):
                 order = ["ask", "bid"]
@@ -190,22 +256,27 @@ class Case1Bot(UTCBot):
                     order_id = ub_oid
                     order_side = pb.OrderSpecSide.BID
                     order_px = bid_px
+                    new_position = -self._quantity[asset]  # Position change for a bid order
                 else:
                     order_id = ua_oid
                     order_side = pb.OrderSpecSide.ASK
                     order_px = ask_px
+                    new_position = self._quantity[asset]   # Position change for an ask order
 
-                r = await self.modify_order(
-                        order_id = order_id,
-                        asset_code = asset,
-                        order_type = pb.OrderSpecType.LIMIT,
-                        order_side = order_side,
-                        qty = self._quantity[asset],
-                        px = round_nearest(order_px, TICK_SIZE), 
-                    )
+                # Check if the new position is within the allowed position limit
+                if await self.is_within_position_limit(asset, new_position):
+                    r = await self.modify_order(
+                            order_id=order_id,
+                            asset_code=asset,
+                            order_type=pb.OrderSpecType.LIMIT,
+                            order_side=order_side,
+                            qty=self._quantity[asset],
+                            px=round_nearest(order_px, TICK_SIZE),
+                        )
 
-                self.__orders[f"underlying_{d}_{asset}"] = (r.order_id, order_px)
-                
+                    self.__orders[f"underlying_{d}_{asset}"] = (r.order_id, order_px)
+
+
         
 
 def round_nearest(x, a):
@@ -215,3 +286,4 @@ def round_nearest(x, a):
 
 if __name__ == "__main__":
     start_bot(Case1Bot)
+
