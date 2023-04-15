@@ -16,6 +16,7 @@ import proto.utc_bot as pb
 import betterproto
 import asyncio
 import re
+import os
 
 DAYS_IN_MONTH = 21
 DAYS_IN_YEAR = 252
@@ -24,6 +25,7 @@ NUM_FUTURES = 14
 TICK_SIZE = 0.00001
 FUTURE_CODES = [chr(ord('A') + i) for i in range(NUM_FUTURES)] # Suffix of monthly future code
 CONTRACTS = ['SBL'] +  ['LBS' + c for c in FUTURE_CODES] + ['LLL']
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class Case1Bot(UTCBot):
     """
@@ -125,15 +127,17 @@ class Case1Bot(UTCBot):
         self._weather_log = []
         
         # Load CSV data
-        weather_2020 = pd.read_csv("weather_2020.csv")
-        weather_2021 = pd.read_csv("weather_2021.csv")
-        futures_2020 = pd.read_csv("futures_2020_clean.csv")
-        futures_2021 = pd.read_csv("futures_2021_clean.csv")
+        weather_path = os.path.join(SCRIPT_DIR, "..", "data", "case1", "weather_2022.csv")
+        weather_2020 = pd.read_csv(weather_path)
+        # weather_2021 = pd.read_csv("weather_2021.csv")
+        futures_path = os.path.join(SCRIPT_DIR, "..", "data", "case1", "futures_2022.csv")
+        futures_2020 = pd.read_csv(futures_path)
+        # futures_2021 = pd.read_csv("futures_2021_clean.csv")
         
         # Combine weather and futures data
-        data_2020 = pd.concat([weather_2020, futures_2020], axis=1)
-        data_2021 = pd.concat([weather_2021, futures_2021], axis=1)
-        combined_data = pd.concat([data_2020, data_2021], axis=0)
+        data_2022 = pd.concat([weather_2020, futures_2020], axis=1)
+        # data_2022 = pd.concat([weather_2021, futures_2021], axis=1)
+        combined_data = data_2022
         
         # Train linear regression model
         self.lr_model = LinearRegression()
@@ -151,11 +155,32 @@ class Case1Bot(UTCBot):
     
     # This is an example of creating and redeeming etfs
     # You can remove this in your actual bots.
+    '''
     async def example_redeem_etf(self):
         while True:
             redeem_resp = await self.redeem_etf(1)
             create_resp = await self.create_etf(5)
             await asyncio.sleep(1)
+    '''
+
+    async def example_redeem_etf(self):
+        while True:
+            # Check positions to manage risk
+            positions = await self.get_positions()
+            if positions.ok:
+                self.positions = positions.positions
+                etf_position = self.positions.get("etf", 0)
+
+                if etf_position <= 0:
+                    # If ETF position is negative or zero, create ETFs
+                    create_resp = await self.create_etf(1)
+                else:
+                    # If ETF position is positive, redeem ETFs
+                    redeem_resp = await self.redeem_etf(1)
+
+            await asyncio.sleep(1)
+
+
 
 
     ### Helpful ideas
@@ -175,28 +200,36 @@ class Case1Bot(UTCBot):
             ## Old prices
             ub_oid, ub_price = self.__orders["underlying_bid_{}".format(asset)]
             ua_oid, ua_price = self.__orders["underlying_ask_{}".format(asset)]
-            
+
+            # Calculate new bid and ask prices based on the updated fair price and spread
             bid_px = self._fair_price[asset] - self._spread[asset]
             ask_px = self._fair_price[asset] + self._spread[asset]
-            
-            # If the underlying price moved first, adjust the orders to follow
-            if self._best_bid[asset] > ub_price:
-                await self.cancel_order(ub_oid)
-            if self._best_ask[asset] < ua_price:
-                await self.cancel_order(ua_oid)
-                
-            # Place new orders if we don't have any in the order book
-            if ub_oid == "":
+
+            # If the bid or ask prices have changed, cancel the old orders and place new ones
+            if self._best_bid[asset] != bid_px or self._best_ask[asset] != ask_px:
+
+                # Cancel old bid order
+                if ub_oid:
+                    await self.cancel_order(ub_oid)
+                    self.__orders["underlying_bid_{}".format(asset)] = ("", 0)
+
+                # Cancel old ask order
+                if ua_oid:
+                    await self.cancel_order(ua_oid)
+                    self.__orders["underlying_ask_{}".format(asset)] = ("", 0)
+
+                # Place new bid order
                 ub_resp = await self.place_order(asset, True, bid_px, self._quantity[asset])
                 if ub_resp.ok:
                     self.__orders["underlying_bid_{}".format(asset)] = (ub_resp.order_id, ub_resp.order.price)
-                
-            if ua_oid == "":
+
+                # Place new ask order
                 ua_resp = await self.place_order(asset, False, ask_px, self._quantity[asset])
                 if ua_resp.ok:
                     self.__orders["underlying_ask_{}".format(asset)] = (ua_resp.order_id, ua_resp.order.price)
-            
+
             await asyncio.sleep(0.1)
+
            
         
 
@@ -207,3 +240,4 @@ def round_nearest(x, a):
 
 if __name__ == "__main__":
     start_bot(Case1Bot)
+
